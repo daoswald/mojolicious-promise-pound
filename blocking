@@ -1,0 +1,23 @@
+#!/usr/bin/env perl
+
+use Mojolicious::Lite;
+use Mojo::UserAgent;
+
+helper ua => sub { state $ua = Mojo::UserAgent->new; return $ua; };
+helper url => sub {'http://127.0.0.1:3000'};
+
+get '/song' => sub {
+  my $c = shift;
+
+  my $map   = $c->ua->get($c->url . '/song-map')->result->json;
+  my $title = $c->ua->get($map->{'title'})->result->json->{'title'};
+
+  my @lines = map { $c->ua->get($_)->result->json->{'line'} } @{$map->{'lines'}};
+
+  my $song   = join("\n", @lines);
+  my $output = {title => $title, song => $song};
+
+  $c->render(json => $output);
+};
+
+app->start;

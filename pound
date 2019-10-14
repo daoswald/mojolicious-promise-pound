@@ -1,0 +1,7 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+system (qq{PERL5LIB="$Bin/lib:\$PERL5LIB" mojo pound @ARGV});

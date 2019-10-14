@@ -1,0 +1,33 @@
+#!/usr/bin/env perl
+
+use Mojolicious::Lite;
+use Mojo::UserAgent;
+use Mojo::AsyncAwait;
+use Mojo::Util qw(dumper);
+
+helper ua => sub { state $ua = Mojo::UserAgent->new; return $ua; };
+helper url => sub {'http://127.0.0.1:3000'};
+
+get '/song' => async sub {
+  my $c = shift;
+
+  $c->render_later;
+
+  my $map_tx = await $c->ua->get_p($c->url . '/song-map');
+  my $map = $map_tx->result->json;
+
+  # Handle title
+  my $title_tx = await $c->ua->get_p($map->{'title'});
+  my $title   = $title_tx->result->json->{'title'};
+
+  # Handle lines
+  my @lines_tx = map {await $c->ua->get_p($_)} @{$map->{'lines'}};
+
+  $c->render(json => {
+      title => $title,
+      song  => join("\n", map {$_->result->json->{'line'}} @lines_tx),
+  });
+};
+
+app->start;
+

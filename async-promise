@@ -1,0 +1,35 @@
+#!/usr/bin/env perl
+
+use Mojolicious::Lite;
+use Mojo::UserAgent;
+use Mojo::Util qw(dumper);
+use Mojo::Promise;
+
+helper ua => sub { state $ua = Mojo::UserAgent->new; return $ua; };
+helper url => sub {'http://127.0.0.1:3000'};
+
+get '/song' => sub {
+    my $c = shift;
+
+    $c->render_later;
+    $c->ua->get_p($c->url . '/song-map')->then(sub {
+        my $tx = shift;
+
+        my $map = $tx->result->json;
+
+        my $title_p = $c->ua->get_p($map->{'title'});
+        my @lines_p = map {$c->ua->get_p($_)} @{$map->{'lines'}};
+
+        Mojo::Promise->all($title_p, @lines_p)->then(sub {
+            my ($title, @lines) = @_;
+
+            $c->render(json => {
+                title => $title->[0]->result->json->{'title'},
+                song  => join("\n", map {$_->[0]->result->json->{'line'}} @lines),
+            });
+        });
+    });
+};
+
+app->start;
+

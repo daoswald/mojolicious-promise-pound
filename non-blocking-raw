@@ -1,0 +1,58 @@
+#!/usr/bin/env perl
+
+use Mojolicious::Lite;
+use Mojo::UserAgent;
+use Mojo::Util qw(dumper);
+
+helper ua  => sub { state $ua = Mojo::UserAgent->new; return $ua; };
+helper url => sub {'http://127.0.0.1:3000'};
+
+helper render_if_ready => sub {
+    my ($c, $title, $lines, $got_lines, $want_lines) = @_;
+    if ($got_lines == $want_lines && $title) {
+        $lines = join("\n", @$lines);
+        $c->render(json => {title => $title, lines => $lines});
+    }
+};
+
+get '/song' => sub {
+    my $c = shift;
+
+    my $title;
+    my @lines;
+    my $map;
+    $c->render_later;
+
+    $c->ua->get($c->url . '/song-map' => sub {
+        my ($ua, $tx) = @_;
+
+        $map = $tx->result->json;
+        my $got_lines = 0;
+        $c->render_later;
+
+        # Handle the title.
+        $c->ua->get($map->{'title'} => sub {
+            my ($ua, $tx) = @_;
+            $title = $tx->result->json->{'title'};
+            $c->render_if_ready($title, \@lines, $got_lines, scalar(@{$map->{'lines'}}));
+        });
+
+        # Handle song lines.
+        foreach my $line (@{$map->{'lines'}}) {
+            $c->ua->get($line => sub {
+                my ($ua, $tx) = @_;
+                my($line_num) = $line =~ m/(\d+)$/;
+
+#                push @lines, $tx->result->json->{'line'};
+                $lines[$line_num-1] = $tx->result->json->{'line'};
+
+                $got_lines++;
+                $c->render_if_ready($title, \@lines, $got_lines, scalar(@{$map->{'lines'}}));
+            });
+        }
+    });
+
+};
+
+
+app->start;

@@ -1,0 +1,74 @@
+#!/usr/bin/env perl
+use Mojolicious::Lite;
+
+use FindBin qw($Bin);
+use lib "$Bin/lib";
+require OldMcDonald;
+use Data::Dumper;
+
+helper cache            => sub { state $cache = {} };
+helper song             => sub { return shift->cache->{'song'} ||= OldMcDonald->new };
+helper delay_time       => sub { $ENV{'OLD_MCDONALD_DELAY_TIME'} // 0.1 };
+
+helper render_delayed   => sub {
+    my ($c, $data, $status) = @_;
+
+    $c->render_later;
+
+    Mojo::IOLoop->timer($c->delay_time => sub {
+        $c->render(
+            json => $data,
+            ($status ? (status => $status) : ()),
+        );
+    });
+};
+
+helper not_found => sub {
+    my $c = shift;
+    return $c->render_delayed({
+        status   => 'error',
+        error    => 'Not Found',
+        resource => $c->url_for($c->param('not_found'))->to_abs,
+    }, 404);
+};
+
+get '/song-map' => sub {
+    my $c = shift;
+
+    my $song = $c->song;
+    my @lines = @{$song->line_numbers};
+
+    my $data = {
+        title   => $c->url_for('title/')->to_abs,
+        lines   => [map {$c->url_for('line/' . ($_+1))->to_abs} @lines],
+        n_lines => $song->num_lines,
+    };
+
+    $c->render_delayed($data);
+};
+
+
+get '/title' => sub {
+    my $c = shift;
+    $c->render_delayed({title => $c->song->title});
+};
+
+get '/line/:line' => {line => 1} => sub {
+    my $c = shift;
+
+    my $song     = $c->song;
+    my $resource = $c->stash('line');
+
+    return $c->not_found if $resource < 1 || $resource > $song->num_lines;
+
+    $c->render_delayed({
+        line => $song->line($resource-1),
+        next => ($resource < $song->num_lines ? $c->url_for('line/' . ($resource+1))->to_abs : ''),
+    });
+};
+
+any '/*not_found' => {not_found => ''} => sub { shift->not_found }; # Catch all.
+
+Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
+
+app->start;
